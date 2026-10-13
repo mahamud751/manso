@@ -1,0 +1,689 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  CUSTOMER
+  OWNER
+  BRANCH_MANAGER
+  FACILITY_OPERATOR
+  PACKER
+  CASHIER
+  DRIVER
+  SUPPORT
+  FINANCE
+}
+
+enum Language {
+  EN
+  BN
+}
+
+enum FulfilmentMode {
+  DELIVERY
+  COLLECTION
+}
+
+enum OrderStatus {
+  RECEIVED
+  ACCEPTED
+  PREPARING
+  READY
+  OUT_FOR_DELIVERY
+  DELIVERED
+  COLLECTED
+  CANCELLED
+  FAILED
+}
+
+enum PaymentState {
+  UNPAID
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+  CASH_DUE
+  REFUNDED
+  PARTIALLY_REFUNDED
+}
+
+enum PaymentMethod {
+  BKASH
+  CARD
+  CASH
+}
+
+enum ReleaseStatus {
+  DRAFT
+  RELEASED
+  WITHDRAWN
+  SOLD_OUT
+}
+
+enum StreamStatus {
+  SCHEDULED
+  LIVE
+  ENDED
+  OFFLINE
+}
+
+enum HoldStatus {
+  ACTIVE
+  CONVERTED
+  RELEASED
+  EXPIRED
+}
+
+enum SupportTopic {
+  DELIVERY_ISSUE
+  MISSING_ITEM
+  WRONG_CUT
+  REFUND
+  OTHER
+}
+
+enum SupportStatus {
+  OPEN
+  REVIEWING
+  RESOLVED
+  REJECTED
+}
+
+enum RefundStatus {
+  REQUESTED
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  REFUNDED
+}
+
+enum ProductKind {
+  BEEF
+  BONELESS
+  MINCE
+}
+
+model User {
+  id                String    @id @default(cuid())
+  role              UserRole  @default(CUSTOMER)
+  phone             String?   @unique
+  name              String    @default("Customer")
+  language          Language  @default(EN)
+  preferredBranchId String?
+  preferredBranch   Branch?   @relation("PreferredBranch", fields: [preferredBranchId], references: [id])
+  staffBranchId     String?
+  staffBranch       Branch?   @relation("StaffBranch", fields: [staffBranchId], references: [id])
+  deletedAt         DateTime?
+  createdAt         DateTime  @default(now())
+
+  addresses      Address[]
+  consent        Consent?
+  devices        DeviceToken[]
+  basket         Basket?
+  orders         Order[]
+  notifications  NotificationEvent[]
+  supportCases   SupportCase[]
+  assignments    DriverAssignment[]
+  questions      LiveQuestion[]
+  audits         AuditEvent[]
+}
+
+model OtpCode {
+  id         String    @id @default(cuid())
+  phone      String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([phone, createdAt])
+}
+
+model Consent {
+  id               String    @id @default(cuid())
+  userId           String    @unique
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  liveAlerts       Boolean   @default(false)
+  offers           Boolean   @default(false)
+  orderUpdates     Boolean   @default(true)
+  termsAcceptedAt  DateTime?
+  privacyAcceptedAt DateTime?
+  updatedAt        DateTime  @updatedAt
+}
+
+model DeviceToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  platform  String
+  createdAt DateTime @default(now())
+}
+
+model Address {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String   @default("Home")
+  line1     String
+  line2     String?
+  area      String
+  city      String   @default("Sylhet")
+  postcode  String?
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Branch {
+  id                 String  @id @default(cuid())
+  slug               String  @unique
+  name               String
+  area               String
+  addressLine        String
+  city               String
+  phone              String
+  lat                Float
+  lng                Float
+  opensAt            String
+  closesAt           String
+  collectionOpensAt  String
+  deliveryStartsAt   String
+  deliveryFeePoisha  Int
+  minOrderPoisha     Int
+  timezone           String  @default("Asia/Dhaka")
+  active             Boolean @default(true)
+  imageUrl           String?
+
+  zones            Zone[]
+  slotTemplates    SlotTemplate[]
+  batches          Batch[]
+  orders           Order[]
+  streams          StreamSession[]
+  staff            User[]            @relation("StaffBranch")
+  preferredBy      User[]            @relation("PreferredBranch")
+  prices           PriceVersion[]
+}
+
+model Zone {
+  id         String  @id @default(cuid())
+  branchId   String
+  branch     Branch  @relation(fields: [branchId], references: [id])
+  name       String
+  feePoisha  Int
+  active     Boolean @default(true)
+}
+
+model SlotTemplate {
+  id           String         @id @default(cuid())
+  branchId     String
+  branch       Branch         @relation(fields: [branchId], references: [id])
+  mode         FulfilmentMode
+  label        String
+  startMinutes Int
+  endMinutes   Int
+  capacity     Int
+  active       Boolean        @default(true)
+}
+
+model Facility {
+  id       String          @id @default(cuid())
+  name     String
+  batches  Batch[]
+  streams  StreamSession[]
+}
+
+model Category {
+  id       String    @id @default(cuid())
+  slug     String    @unique
+  nameEn   String
+  nameBn   String
+  sort     Int
+  products Product[]
+}
+
+model Product {
+  id             String      @id @default(cuid())
+  slug           String      @unique
+  categoryId     String
+  category       Category    @relation(fields: [categoryId], references: [id])
+  kind           ProductKind
+  nameEn         String
+  nameBn         String
+  descriptionEn  String
+  descriptionBn  String
+  boneContent    String
+  imageUrl       String
+  incrementGrams Int         @default(500)
+  minGrams       Int         @default(500)
+  maxGrams       Int         @default(10000)
+  active         Boolean     @default(true)
+  sort           Int         @default(0)
+
+  options ProductOption[]
+  prices  PriceVersion[]
+  stocks  BatchCutStock[]
+  pins    StreamProduct[]
+}
+
+model ProductOption {
+  id        String  @id @default(cuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  nameEn    String
+  nameBn    String
+  sort      Int
+}
+
+model PriceVersion {
+  id                String    @id @default(cuid())
+  productId         String
+  product           Product   @relation(fields: [productId], references: [id])
+  branchId          String?
+  branch            Branch?   @relation(fields: [branchId], references: [id])
+  pricePerKgPoisha  Int
+  effectiveFrom     DateTime
+  effectiveTo       DateTime?
+  createdAt         DateTime  @default(now())
+
+  @@index([productId, branchId, effectiveFrom])
+}
+
+model Batch {
+  id               String        @id @default(cuid())
+  code             String
+  facilityId       String
+  facility         Facility      @relation(fields: [facilityId], references: [id])
+  branchId         String
+  branch           Branch        @relation(fields: [branchId], references: [id])
+  preparationDate  DateTime      @db.Date
+  releaseStatus    ReleaseStatus @default(DRAFT)
+  notes            String?
+  createdAt        DateTime      @default(now())
+
+  cuts       BatchCutStock[]
+  movements  InventoryMovement[]
+  streams    StreamSession[]
+  replays    ReplayAsset[]
+
+  @@unique([branchId, code])
+}
+
+model BatchCutStock {
+  id             String @id @default(cuid())
+  batchId        String
+  batch          Batch  @relation(fields: [batchId], references: [id])
+  productId      String
+  product        Product @relation(fields: [productId], references: [id])
+  saleableGrams  Int
+  heldGrams      Int    @default(0)
+  soldGrams      Int    @default(0)
+
+  @@unique([batchId, productId])
+}
+
+model InventoryMovement {
+  id        String   @id @default(cuid())
+  batchId   String
+  batch     Batch    @relation(fields: [batchId], references: [id])
+  productId String
+  type      String
+  grams     Int
+  note      String?
+  createdAt DateTime @default(now())
+}
+
+model StockHold {
+  id        String     @id @default(cuid())
+  quoteId   String
+  quote     Quote      @relation(fields: [quoteId], references: [id])
+  userId    String
+  productId String
+  batchId   String
+  stockId   String
+  grams     Int
+  status    HoldStatus @default(ACTIVE)
+  expiresAt DateTime
+  orderId   String?
+  createdAt DateTime   @default(now())
+
+  @@index([status, expiresAt])
+}
+
+model SlotHold {
+  id             String     @id @default(cuid())
+  branchId       String
+  slotTemplateId String
+  serviceDate    DateTime   @db.Date
+  quoteId        String     @unique
+  quote          Quote      @relation(fields: [quoteId], references: [id])
+  status         HoldStatus @default(ACTIVE)
+  expiresAt      DateTime
+  createdAt      DateTime   @default(now())
+
+  @@index([branchId, slotTemplateId, serviceDate, status])
+}
+
+model StreamSession {
+  id             String       @id @default(cuid())
+  facilityId     String
+  facility       Facility     @relation(fields: [facilityId], references: [id])
+  branchId       String
+  branch         Branch       @relation(fields: [branchId], references: [id])
+  batchId        String?
+  batch          Batch?       @relation(fields: [batchId], references: [id])
+  titleEn        String
+  titleBn        String
+  summaryEn      String
+  summaryBn      String
+  status         StreamStatus
+  scheduledStart DateTime
+  scheduledEnd   DateTime
+  startedAt      DateTime?
+  endedAt        DateTime?
+  playbackUrl    String?
+  posterUrl      String?
+  heartbeatAt    DateTime?
+  publicOutput   Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+
+  pins          StreamProduct[]
+  questions     LiveQuestion[]
+  viewers       StreamViewer[]
+  notifications NotificationEvent[]
+  replay        ReplayAsset?
+}
+
+model StreamViewer {
+  id         String        @id @default(cuid())
+  sessionId  String
+  session    StreamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  viewerKey  String
+  lastSeen   DateTime
+
+  @@unique([sessionId, viewerKey])
+}
+
+model StreamProduct {
+  id        String        @id @default(cuid())
+  sessionId String
+  session   StreamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product       @relation(fields: [productId], references: [id])
+  sort      Int
+
+  @@unique([sessionId, productId])
+}
+
+model ReplayAsset {
+  id           String         @id @default(cuid())
+  sessionId    String?        @unique
+  session      StreamSession? @relation(fields: [sessionId], references: [id])
+  batchId      String
+  batch        Batch          @relation(fields: [batchId], references: [id])
+  branchId     String
+  titleEn      String
+  titleBn      String
+  summaryEn    String
+  summaryBn    String
+  recordedAt   DateTime
+  durationSec  Int
+  viewCount    Int            @default(0)
+  posterUrl    String?
+  playbackUrl  String?
+  published    Boolean        @default(true)
+  orderable    Boolean        @default(false)
+}
+
+model LiveQuestion {
+  id        String        @id @default(cuid())
+  sessionId String
+  session   StreamSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?         @relation(fields: [userId], references: [id])
+  message   String
+  createdAt DateTime      @default(now())
+}
+
+model Basket {
+  id        String       @id @default(cuid())
+  userId    String       @unique
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branchId  String?
+  items     BasketItem[]
+  updatedAt DateTime     @updatedAt
+}
+
+model BasketItem {
+  id        String  @id @default(cuid())
+  basketId  String
+  basket    Basket  @relation(fields: [basketId], references: [id], onDelete: Cascade)
+  productId String
+  grams     Int
+  optionId  String?
+  note      String?
+
+  @@unique([basketId, productId])
+}
+
+model Quote {
+  id             String         @id @default(cuid())
+  userId         String
+  branchId       String
+  mode           FulfilmentMode
+  addressSnapshot Json?
+  slotTemplateId String
+  serviceDate    DateTime       @db.Date
+  slotLabel      String
+  subtotalPoisha Int
+  feePoisha      Int
+  totalPoisha    Int
+  currency       String         @default("BDT")
+  expiresAt      DateTime
+  createdAt      DateTime       @default(now())
+
+  lines    QuoteLine[]
+  holds    StockHold[]
+  slotHold SlotHold?
+  order    Order?
+}
+
+model QuoteLine {
+  id                   String @id @default(cuid())
+  quoteId              String
+  quote                Quote  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  productId            String
+  batchId              String
+  stockId              String
+  productName          String
+  batchCode            String
+  imageUrl             String
+  grams                Int
+  unitPricePerKgPoisha Int
+  lineTotalPoisha      Int
+  optionName           String?
+  note                 String?
+}
+
+model Order {
+  id              String         @id @default(cuid())
+  number          Int            @unique
+  userId          String
+  user            User           @relation(fields: [userId], references: [id])
+  branchId        String
+  branch          Branch         @relation(fields: [branchId], references: [id])
+  quoteId         String?        @unique
+  quote           Quote?         @relation(fields: [quoteId], references: [id])
+  mode            FulfilmentMode
+  status          OrderStatus
+  paymentState    PaymentState
+  paymentMethod   PaymentMethod
+  serviceDate     DateTime       @db.Date
+  slotTemplateId  String
+  slotLabel       String
+  addressSnapshot Json
+  subtotalPoisha  Int
+  feePoisha       Int
+  totalPoisha     Int
+  currency        String         @default("BDT")
+  collectionCode  String?
+  version         Int            @default(1)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  lines      OrderLine[]
+  payments   PaymentAttempt[]
+  refunds    Refund[]
+  events     FulfilmentEvent[]
+  support    SupportCase[]
+  assignment DriverAssignment?
+}
+
+model OrderLine {
+  id                   String  @id @default(cuid())
+  orderId              String
+  order                Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId            String
+  batchId              String
+  productName          String
+  batchCode            String
+  imageUrl             String
+  orderedGrams         Int
+  actualGrams          Int?
+  unitPricePerKgPoisha Int
+  lineTotalPoisha      Int
+  optionName           String?
+  note                 String?
+}
+
+model PaymentAttempt {
+  id             String        @id @default(cuid())
+  orderId        String
+  order          Order         @relation(fields: [orderId], references: [id])
+  method         PaymentMethod
+  amountPoisha   Int
+  currency       String        @default("BDT")
+  state          PaymentState
+  providerRef    String?
+  transactionId  String?       @unique
+  createdAt      DateTime      @default(now())
+}
+
+model Refund {
+  id           String       @id @default(cuid())
+  orderId      String
+  order        Order        @relation(fields: [orderId], references: [id])
+  amountPoisha Int
+  reason       String
+  status       RefundStatus @default(REQUESTED)
+  supportCaseId String?     @unique
+  supportCase  SupportCase? @relation(fields: [supportCaseId], references: [id])
+  createdAt    DateTime     @default(now())
+}
+
+model FulfilmentEvent {
+  id        String      @id @default(cuid())
+  orderId   String
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  status    OrderStatus
+  note      String?
+  createdAt DateTime    @default(now())
+}
+
+model DriverAssignment {
+  id          String    @id @default(cuid())
+  orderId     String    @unique
+  order       Order     @relation(fields: [orderId], references: [id])
+  driverId    String
+  driver      User      @relation(fields: [driverId], references: [id])
+  status      String    @default("ASSIGNED")
+  proofNote   String?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+model SupportCase {
+  id        String        @id @default(cuid())
+  userId    String
+  user      User          @relation(fields: [userId], references: [id])
+  orderId   String?
+  order     Order?        @relation(fields: [orderId], references: [id])
+  topic     SupportTopic
+  message   String
+  status    SupportStatus @default(OPEN)
+  createdAt DateTime      @default(now())
+
+  messages SupportMessage[]
+  refund   Refund?
+}
+
+model SupportMessage {
+  id        String      @id @default(cuid())
+  caseId    String
+  case      SupportCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  fromStaff Boolean     @default(false)
+  body      String
+  createdAt DateTime    @default(now())
+}
+
+model NotificationEvent {
+  id        String         @id @default(cuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  titleEn   String
+  titleBn   String
+  bodyEn    String
+  bodyBn    String
+  deepLink  String
+  sessionId String?
+  session   StreamSession? @relation(fields: [sessionId], references: [id])
+  orderId   String?
+  dedupeKey String
+  readAt    DateTime?
+  createdAt DateTime       @default(now())
+
+  @@unique([userId, dedupeKey])
+}
+
+model PolicyPage {
+  slug    String @id
+  titleEn String
+  titleBn String
+  bodyEn  String
+  bodyBn  String
+}
+
+model AuditEvent {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id])
+  action    String
+  entity    String
+  entityId  String?
+  meta      Json?
+  createdAt DateTime @default(now())
+}
+
+model IdempotencyRecord {
+  id         String   @id @default(cuid())
+  userId     String
+  key        String
+  method     String
+  path       String
+  statusCode Int
+  body       Json
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, key, method, path])
+}
+
+model Counter {
+  id    String @id
+  value Int
+}
