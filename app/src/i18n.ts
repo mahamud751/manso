@@ -113,6 +113,16 @@ const copy = {
   contact: { en: 'Contact branch', bn: 'শাখায় যোগাযোগ' },
   saved: { en: 'Saved', bn: 'সেভ হয়েছে' },
   signInCheckout: { en: 'Sign in to check out. Your basket stays.', bn: 'চেকআউট করতে প্রবেশ করুন। ঝুড়ি থেকে যাবে।' },
+  placeNow: { en: 'Place your order now', bn: 'এখনই অর্ডার করুন' },
+  selected: { en: 'Selected', bn: 'নির্বাচিত' },
+  deliveryAvailable: { en: 'Delivery available', bn: 'ডেলিভারি আছে' },
+  collectionAvailable: { en: 'Collection available', bn: 'সংগ্রহ আছে' },
+  toAddress: { en: 'To your address', bn: 'আপনার ঠিকানায়' },
+  fromBranch: { en: 'From our branch', bn: 'আমাদের শাখা থেকে' },
+  watching: { en: 'watching', bn: 'দেখছেন' },
+  views: { en: 'views', bn: 'বার দেখা' },
+  shareReceipt: { en: 'Share receipt', bn: 'রসিদ শেয়ার' },
+  freshCut: { en: 'Freshly cut after our live session today.', bn: 'আজকের লাইভের পর তাজা কেটে দেওয়া হবে।' },
 } as const;
 
 export type CopyKey = keyof typeof copy;

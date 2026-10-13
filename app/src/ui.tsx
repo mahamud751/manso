@@ -4,6 +4,7 @@ import {
   Image,
   Pressable,
   ScrollView,
+  StyleProp,
   StyleSheet,
   Text,
   TextInput,
@@ -142,16 +143,57 @@ export function Pill({ text, tone = 'peach' }: { text: string; tone?: 'peach' | 
   );
 }
 
-export function Qty({ value, onChange, step }: { value: number; onChange: (grams: number) => void; step: number }) {
+export function Qty({
+  value,
+  onChange,
+  step,
+  min,
+  wide,
+  disabled,
+}: {
+  value: number;
+  onChange: (grams: number) => void;
+  step: number;
+  min?: number;
+  wide?: boolean;
+  disabled?: boolean;
+}) {
+  const floor = min ?? step;
+  const shown = value > 0 ? value : floor;
   return (
-    <View style={styles.qty}>
-      <Pressable accessibilityLabel="Decrease" onPress={() => onChange(Math.max(0, value - step))} style={styles.qtyBtn}>
+    <View style={[styles.qty, wide && styles.qtyWide]}>
+      <Pressable
+        accessibilityLabel="Decrease"
+        onPress={() => onChange(value <= floor ? 0 : value - step)}
+        style={styles.qtyBtn}>
         <Text style={styles.qtyGlyph}>–</Text>
       </Pressable>
-      <Text style={styles.qtyValue}>{kgLabel(value)}</Text>
-      <Pressable accessibilityLabel="Increase" onPress={() => onChange(value + step)} style={[styles.qtyBtn, styles.qtyBtnOn]}>
+      <Text style={styles.qtyValue}>{kgLabel(shown)}</Text>
+      <Pressable
+        accessibilityLabel="Increase"
+        disabled={disabled}
+        onPress={() => {
+          if (!disabled) onChange(value <= 0 ? floor : value + step);
+        }}
+        style={[styles.qtyBtn, styles.qtyBtnOn, disabled && { opacity: 0.4 }]}>
         <Text style={[styles.qtyGlyph, { color: colors.white }]}>+</Text>
       </Pressable>
+    </View>
+  );
+}
+
+export function Radio({ on }: { on: boolean }) {
+  return <View style={[styles.radio, on && styles.radioOn]}>{on ? <View style={styles.radioDot} /> : null}</View>;
+}
+
+export function Notice({ icon, title, body }: { icon?: string; title: string; body?: string }) {
+  return (
+    <View style={styles.notice}>
+      {icon ? <Text style={styles.noticeIcon}>{icon}</Text> : null}
+      <View style={{ flex: 1 }}>
+        <Text style={styles.noticeTitle}>{title}</Text>
+        {body ? <Text style={styles.noticeBody}>{body}</Text> : null}
+      </View>
     </View>
   );
 }
@@ -161,29 +203,64 @@ export function ProductCard({
   lang,
   onOpen,
   onAdd,
+  variant = 'shop',
+  grams = 0,
+  onGrams,
 }: {
   product: Product;
   lang: Lang;
   onOpen: () => void;
-  onAdd: () => void;
+  onAdd?: () => void;
+  variant?: 'home' | 'shop';
+  grams?: number;
+  onGrams?: (grams: number) => void;
 }) {
+  const [liked, setLiked] = React.useState(false);
   return (
-    <Pressable onPress={onOpen} style={styles.product}>
-      {product.imageUrl ? <Image source={{ uri: product.imageUrl }} style={styles.photo} /> : <View style={styles.photo} />}
-      <View style={{ padding: 12, gap: 4 }}>
-        <Text style={styles.productName}>{tx(product.name, lang)}</Text>
-        <Text style={styles.price}>
-          {formatTaka(product.pricePerKgPoisha)}
-          {t('perKg', lang)}
-        </Text>
-        <View style={styles.row}>
-          <Text style={styles.muted}>{product.inStock ? kgLabel(product.availableGrams) : t('soldOut', lang)}</Text>
-          <Pressable accessibilityLabel={t('add', lang)} onPress={onAdd} style={styles.add}>
-            <Text style={styles.addText}>+ {t('add', lang)}</Text>
-          </Pressable>
-        </View>
+    <View style={styles.productShadow}>
+      <View style={styles.product}>
+        <Pressable onPress={onOpen}>
+          {product.imageUrl ? <Image source={{ uri: product.imageUrl }} style={styles.photo} /> : <View style={styles.photo} />}
+        </Pressable>
+        <Pressable accessibilityLabel="Save" onPress={() => setLiked(value => !value)} style={styles.heart}>
+          <Text style={[styles.heartGlyph, liked && { color: colors.orange }]}>{liked ? '♥' : '♡'}</Text>
+        </Pressable>
+        <Pressable onPress={onOpen} style={styles.productBody}>
+          <Text style={styles.productName} numberOfLines={2}>{tx(product.name, lang)}</Text>
+          <Text style={styles.price}>
+            {formatTaka(product.pricePerKgPoisha)}
+            {t('perKg', lang)}
+          </Text>
+        </Pressable>
+        {variant === 'home' ? (
+          product.inStock || grams > 0 ? (
+            <View style={styles.productPad}>
+              <Qty
+                wide
+                value={grams}
+                step={product.incrementGrams}
+                min={product.minGrams}
+                disabled={!product.inStock}
+                onChange={next => onGrams?.(next === 0 ? 0 : Math.min(product.maxGrams, next))}
+              />
+            </View>
+          ) : (
+            <Text style={[styles.muted, styles.productPad]}>{t('soldOut', lang)}</Text>
+          )
+        ) : (
+          <View style={[styles.row, styles.productPad]}>
+            <Text style={styles.muted}>{product.inStock ? kgLabel(product.minGrams) : t('soldOut', lang)}</Text>
+            <Pressable
+              accessibilityLabel={t('add', lang)}
+              disabled={!product.inStock}
+              onPress={onAdd}
+              style={[styles.add, !product.inStock && { opacity: 0.4 }]}>
+              <Text style={styles.addText}>🛒 {t('add', lang)}</Text>
+            </Pressable>
+          </View>
+        )}
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -215,7 +292,7 @@ export function Field({
   );
 }
 
-export function Card({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
+export function Card({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }) {
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
@@ -250,20 +327,53 @@ const styles = StyleSheet.create({
   pillDark: { backgroundColor: colors.dark },
   pillText: { color: colors.orange, fontSize: 12, fontWeight: '700' },
   qty: { flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: colors.line, borderRadius: 24, padding: 4, alignSelf: 'flex-start', backgroundColor: colors.white },
+  qtyWide: { alignSelf: 'stretch', justifyContent: 'space-between' },
   qtyBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.peach, alignItems: 'center', justifyContent: 'center' },
   qtyBtnOn: { backgroundColor: colors.orange },
   qtyGlyph: { color: colors.orange, fontSize: 20, fontWeight: '700' },
   qtyValue: { minWidth: 48, textAlign: 'center', fontWeight: '700', color: colors.dark },
-  product: { flex: 1, backgroundColor: colors.white, borderRadius: 16, borderWidth: 1, borderColor: colors.line, overflow: 'hidden' },
-  photo: { height: 120, width: '100%', backgroundColor: colors.peach },
-  productName: { fontWeight: '700', color: colors.dark },
-  price: { color: colors.orange, fontWeight: '800' },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 },
+  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, borderColor: colors.line, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white },
+  radioOn: { borderColor: colors.orange },
+  radioDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.orange },
+  notice: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', backgroundColor: colors.peach, borderRadius: 16, padding: 14, marginVertical: 8 },
+  noticeIcon: { fontSize: 16, marginTop: 1 },
+  noticeTitle: { fontWeight: '800', color: colors.dark },
+  noticeBody: { color: colors.muted, marginTop: 2, fontSize: 13 },
+  productShadow: {
+    backgroundColor: colors.white,
+    borderRadius: 18,
+    shadowColor: '#3C2A1E',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  product: { backgroundColor: colors.white, borderRadius: 18, borderWidth: 1, borderColor: colors.line, overflow: 'hidden' },
+  photo: { height: 118, width: '100%', backgroundColor: colors.peach },
+  heart: { position: 'absolute', top: 8, right: 8, width: 32, height: 32, borderRadius: 16, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  heartGlyph: { fontSize: 16, color: colors.muted, marginTop: -1 },
+  productBody: { paddingHorizontal: 12, paddingTop: 10, gap: 2 },
+  productPad: { paddingHorizontal: 12, paddingBottom: 12, paddingTop: 8 },
+  productName: { fontWeight: '700', color: colors.dark, minHeight: 36 },
+  price: { color: colors.orange, fontWeight: '800', fontSize: 16 },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   muted: { color: colors.muted, fontSize: 13 },
-  add: { backgroundColor: colors.orange, borderRadius: 12, paddingHorizontal: 10, minHeight: 36, justifyContent: 'center' },
+  add: { backgroundColor: colors.orange, borderRadius: 20, paddingHorizontal: 12, minHeight: 36, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   addText: { color: colors.white, fontWeight: '700', fontSize: 13 },
   fieldLabel: { color: colors.dark, fontWeight: '600' },
   input: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, borderRadius: 12, paddingHorizontal: 14, minHeight: 48, color: colors.dark },
-  card: { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, borderRadius: 18, padding: 14, marginVertical: 8 },
+  card: {
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: 18,
+    padding: 14,
+    marginVertical: 8,
+    shadowColor: '#3C2A1E',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 2,
+  },
   h1: { ...serif, fontSize: 34, lineHeight: 38, color: colors.dark, marginVertical: 8 },
 });

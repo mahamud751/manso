@@ -9,13 +9,13 @@ import { RootStackParamList, TabParamList } from '../nav';
 import { useStore } from '../store';
 import { colors, formatTaka, serif } from '../theme';
 import { Product } from '../types';
-import { Button, Card, CartButton, Field, Muted, Pill, ProductCard, Qty, Screen, TopBar, tx } from '../ui';
+import { Button, Card, CartButton, Field, Muted, Notice, Pill, ProductCard, Qty, Radio, Screen, TopBar, tx } from '../ui';
 
 type Nav = CompositeNavigationProp<BottomTabNavigationProp<TabParamList>, NativeStackNavigationProp<RootStackParamList>>;
 
 export function HomeScreen() {
   const navigation = useNavigation<Nav>();
-  const { lang, branch, notify, addCut } = useStore();
+  const { lang, branch, notify, addCut, changeCut, basket } = useStore();
   const [products, setProducts] = useState<Product[]>([]);
   const [q, setQ] = useState('');
   useEffect(() => {
@@ -38,29 +38,48 @@ export function HomeScreen() {
           <Pressable onPress={() => navigation.navigate('Shop')} style={styles.heroBtn}><Text style={styles.heroBtnText}>{t('shopCuts', lang)} →</Text></Pressable>
         </View>
       </Pressable>
-      <Pressable onPress={() => navigation.navigate('Live')} style={styles.liveCard}>
-        <Text style={styles.kicker}>{t('liveDaily', lang).toUpperCase()}</Text>
-        <Text style={styles.liveTitle}>{t('watchOrder', lang)}</Text>
-        <Text style={styles.liveSub}>{branch ? branch.name : 'Sylhet'}</Text>
+      <Pressable onPress={() => navigation.navigate('Live')} style={styles.liveSplit}>
+        <View style={styles.liveCopy}>
+          <Text style={styles.kicker}>● {t('liveDaily', lang)}</Text>
+          <Text style={styles.liveTitle}>{t('watchOrder', lang)}</Text>
+          <Text style={styles.liveSub}>{branch ? branch.name : 'Sylhet'}</Text>
+        </View>
+        <Image source={{ uri: `${API_URL}/media/live.jpg` }} style={styles.liveThumb} />
       </Pressable>
-      <Card style={{ backgroundColor: colors.peach }}>
-        <Text style={{ fontWeight: '800' }}>🚚 {t('deliveryFrom', lang)}</Text>
-        <Muted>{lang === 'bn' ? 'অথবা শাখা থেকে সংগ্রহ করুন।' : 'Or collect from your branch.'}</Muted>
-      </Card>
+      <Pressable onPress={() => navigation.navigate('Shop')}>
+        <Card style={styles.deliveryRow}>
+          <Text style={styles.deliveryIcon}>🚚</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.deliveryTitle}>{t('deliveryFrom', lang)}</Text>
+            <Muted>{t('placeNow', lang)}</Muted>
+          </View>
+          <Text style={styles.chev}>›</Text>
+        </Card>
+      </Pressable>
       <View style={styles.rowBetween}>
         <Text style={styles.section}>{t('popular', lang)}</Text>
         <Pressable onPress={() => navigation.navigate('Shop')}><Text style={styles.link}>{t('viewAll', lang)}</Text></Pressable>
       </View>
       <View style={styles.grid}>
-        {products.map(product => (
-          <ProductCard
-            key={product.id}
-            product={product}
-            lang={lang}
-            onOpen={() => navigation.navigate('Product', { id: product.id })}
-            onAdd={() => addCut(product, product.minGrams, product.options[0]?.id).then(() => notify(`${tx(product.name, lang)} added`)).catch(error => notify(error.message))}
-          />
-        ))}
+        {products.map(product => {
+          const grams = basket.items.find(item => item.productId === product.id)?.grams || 0;
+          return (
+            <View key={product.id} style={styles.cell}>
+              <ProductCard
+                variant="home"
+                product={product}
+                lang={lang}
+                grams={grams}
+                onOpen={() => navigation.navigate('Product', { id: product.id })}
+                onGrams={next => {
+                  const existing = basket.items.some(item => item.productId === product.id);
+                  const run = existing || next === 0 ? changeCut(product.id, next) : addCut(product, next, product.options[0]?.id);
+                  run.then(() => { if (!existing && next > 0) notify(tx(product.name, lang)); }).catch(error => notify(error.message));
+                }}
+              />
+            </View>
+          );
+        })}
       </View>
     </Screen>
   );
@@ -68,7 +87,7 @@ export function HomeScreen() {
 
 export function ShopScreen() {
   const navigation = useNavigation<Nav>();
-  const { lang, branch, notify, addCut } = useStore();
+  const { lang, branch, notify, addCut, changeCut, basket } = useStore();
   const [kind, setKind] = useState('ALL');
   const [q, setQ] = useState('');
   const [products, setProducts] = useState<Product[]>([]);
@@ -95,7 +114,19 @@ export function ShopScreen() {
       </View>
       <View style={styles.grid}>
         {products.map(product => (
-          <ProductCard key={product.id} product={product} lang={lang} onOpen={() => navigation.navigate('Product', { id: product.id })} onAdd={() => addCut(product, product.minGrams, product.options[0]?.id).then(() => notify(tx(product.name, lang))).catch(error => notify(String(error.message || error)))} />
+          <View key={product.id} style={styles.cell}>
+            <ProductCard
+              product={product}
+              lang={lang}
+              onOpen={() => navigation.navigate('Product', { id: product.id })}
+              onAdd={() => {
+                const existing = basket.items.find(item => item.productId === product.id);
+                const grams = existing ? Math.min(product.maxGrams, existing.grams + product.incrementGrams) : product.minGrams;
+                const run = existing ? changeCut(product.id, grams) : addCut(product, grams, product.options[0]?.id);
+                run.then(() => notify(tx(product.name, lang))).catch(error => notify(String(error instanceof Error ? error.message : error)));
+              }}
+            />
+          </View>
         ))}
       </View>
       {!products.length ? <Muted>{lang === 'bn' ? 'কোনো কাট পাওয়া যায়নি।' : 'No cuts found.'}</Muted> : null}
@@ -129,19 +160,23 @@ export function ProductScreen({ route, navigation }: NativeStackScreenProps<Root
       </View>
       <Text style={styles.bigPrice}>{formatTaka(product.pricePerKgPoisha)} {t('perKg', lang)}</Text>
       <Muted>{tx(product.description, lang)}</Muted>
-      {!product.inStock ? <Card style={{ backgroundColor: colors.peach }}><Text style={{ color: colors.orange, fontWeight: '800' }}>{t('soldOut', lang)}</Text></Card> : null}
+      {!product.inStock ? <Notice icon="!" title={t('soldOut', lang)} /> : null}
       <Text style={styles.label}>{t('quantity', lang)}</Text>
-      <Qty value={grams} step={product.incrementGrams} onChange={value => setGrams(Math.min(product.maxGrams, Math.max(product.minGrams, value)))} />
+      <Qty wide value={grams} step={product.incrementGrams} min={product.minGrams} onChange={value => setGrams(Math.min(product.maxGrams, Math.max(product.minGrams, value || product.minGrams)))} />
       <Text style={styles.label}>{t('cutting', lang)}</Text>
-      {product.options.map(option => (
-        <Pressable key={option.id} onPress={() => setOptionId(option.id)}>
-          <Card style={optionId === option.id ? styles.picked : undefined}>
-            <Text style={{ fontWeight: '700' }}>{optionId === option.id ? '● ' : '○ '}{tx(option.name, lang)}</Text>
-          </Card>
-        </Pressable>
-      ))}
+      <View style={styles.optionGrid}>
+        {product.options.map(option => {
+          const on = optionId === option.id;
+          return (
+            <Pressable key={option.id} onPress={() => setOptionId(option.id)} style={[styles.option, on && styles.picked]}>
+              <Radio on={on} />
+              <Text style={styles.optionText}>{tx(option.name, lang)}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
       <Field label={t('notes', lang)} value={note} onChangeText={setNote} placeholder={t('notesPh', lang)} />
-      <Card style={{ backgroundColor: colors.peach }}><Text>🚚 {t('deliveryFrom', lang)}</Text></Card>
+      <Notice icon="🚚" title={t('deliveryFrom', lang)} body={t('freshCut', lang)} />
       <Pressable onPress={() => navigation.navigate('Basket')}><Text style={styles.link}>{t('viewBasket', lang)} ({count})</Text></Pressable>
     </Screen>
   );
@@ -159,14 +194,21 @@ const styles = StyleSheet.create({
   heroSub: { color: '#FFE8D7', marginVertical: 6 },
   heroBtn: { alignSelf: 'flex-start', backgroundColor: colors.orange, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
   heroBtnText: { color: colors.white, fontWeight: '700' },
-  liveCard: { backgroundColor: colors.orange, borderRadius: 18, padding: 16, marginBottom: 4 },
-  kicker: { color: '#FFE8D7', letterSpacing: 1, fontSize: 11, fontWeight: '700' },
-  liveTitle: { ...serif, color: colors.white, fontSize: 28 },
-  liveSub: { color: colors.white },
+  liveSplit: { flexDirection: 'row', backgroundColor: colors.orange, borderRadius: 18, overflow: 'hidden', minHeight: 124, marginBottom: 4 },
+  liveCopy: { flex: 1, padding: 14, justifyContent: 'center' },
+  liveThumb: { width: 124, minHeight: 124, backgroundColor: '#C2410C' },
+  kicker: { color: '#FFE8D7', letterSpacing: 0.4, fontSize: 11, fontWeight: '700' },
+  liveTitle: { ...serif, color: colors.white, fontSize: 26, lineHeight: 28, marginTop: 4 },
+  liveSub: { color: colors.white, marginTop: 4, fontSize: 12 },
+  deliveryRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  deliveryIcon: { fontSize: 18 },
+  deliveryTitle: { fontWeight: '800', color: colors.dark },
+  chev: { fontSize: 26, color: colors.muted, marginTop: -2 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 },
   section: { ...serif, fontSize: 22, color: colors.dark },
   link: { color: colors.orange, fontWeight: '700', padding: 8 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
+  cell: { width: '48%', marginBottom: 12 },
   chips: { flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' },
   chip: { backgroundColor: colors.white, borderRadius: 20, borderWidth: 1, borderColor: colors.line, paddingHorizontal: 14, minHeight: 40, justifyContent: 'center' },
   chipOn: { backgroundColor: colors.orange, borderColor: colors.orange },
@@ -175,5 +217,8 @@ const styles = StyleSheet.create({
   name: { ...serif, fontSize: 28, color: colors.dark, flex: 1 },
   bigPrice: { color: colors.orange, fontSize: 26, fontWeight: '800', marginVertical: 6 },
   label: { fontWeight: '800', marginTop: 14, marginBottom: 8, color: colors.dark },
-  picked: { borderColor: colors.orange, borderWidth: 2 },
+  picked: { borderColor: colors.orange, borderWidth: 1.5, backgroundColor: '#FFF7F2' },
+  optionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  option: { width: '48%', flexGrow: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 12, minHeight: 72 },
+  optionText: { fontWeight: '700', color: colors.dark, flex: 1 },
 });

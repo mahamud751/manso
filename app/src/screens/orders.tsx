@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Linking, Pressable, Share, StyleSheet, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
 import { CompositeNavigationProp } from '@react-navigation/native';
@@ -12,7 +12,7 @@ import { RootStackParamList, TabParamList } from '../nav';
 import { useStore } from '../store';
 import { colors, formatTaka, kgLabel, serif } from '../theme';
 import { Order } from '../types';
-import { Button, Card, H1, Muted, Pill, Screen, TopBar } from '../ui';
+import { Button, Card, H1, Muted, Notice, Pill, Screen, TopBar } from '../ui';
 
 type TabNav = CompositeNavigationProp<BottomTabNavigationProp<TabParamList>, NativeStackNavigationProp<RootStackParamList>>;
 
@@ -82,24 +82,42 @@ export function OrdersScreen() {
           </View>
           {!orders.length && !loading ? <Muted>{t('emptyOrders', lang)}</Muted> : null}
           {orders.map(order => (
-            <Pressable key={order.id} onPress={() => navigation.navigate('Order', { id: order.id })}>
-              <Card>
-                <View style={styles.row}>
+            <Card key={order.id}>
+              <View style={styles.row}>
+                <View style={{ flex: 1 }}>
                   <Text style={styles.no}>#{order.number}</Text>
-                  <Pill text={labelStatus(order.status, lang)} />
+                  <Muted>{new Date(order.createdAt).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</Muted>
                 </View>
-                <Muted>{order.slotLabel} · {order.serviceDate}</Muted>
-                <Text style={styles.price}>{formatTaka(order.totalPoisha)}</Text>
+                <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                  <Pill text={labelStatus(order.status, lang)} tone={order.status === 'DELIVERED' || order.status === 'COLLECTED' ? 'green' : 'peach'} />
+                  <Text style={styles.price}>{formatTaka(order.totalPoisha)}</Text>
+                </View>
+              </View>
+              {order.lines.map(line => (
+                <View key={line.productId} style={styles.line}>
+                  {line.imageUrl ? <Image source={{ uri: line.imageUrl }} style={styles.thumb} /> : <View style={styles.thumb} />}
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.name}>{line.productName}</Text>
+                    <Muted>{kgLabel(line.orderedGrams)}</Muted>
+                  </View>
+                  <Text style={styles.name}>{formatTaka(line.lineTotalPoisha)}</Text>
+                </View>
+              ))}
+              {order.feePoisha ? (
                 <View style={styles.row}>
-                  <Muted>{order.lines.length} {lang === 'bn' ? 'কাট' : 'cuts'}</Muted>
-                  {scope === 'past' ? (
-                    <Pressable onPress={() => reorder(order.id)}>
-                      <Text style={styles.link}>{t('reorder', lang)}</Text>
-                    </Pressable>
-                  ) : null}
+                  <Muted>{order.mode === 'COLLECTION' ? t('collectionFee', lang) : t('fee', lang)}</Muted>
+                  <Muted>{formatTaka(order.feePoisha)}</Muted>
                 </View>
-              </Card>
-            </Pressable>
+              ) : null}
+              <View style={styles.actions}>
+                <Pressable onPress={() => navigation.navigate('Order', { id: order.id })} style={styles.actionOutline}>
+                  <Text style={styles.actionOutlineText}>{t('viewOrder', lang)}</Text>
+                </Pressable>
+                <Pressable onPress={() => reorder(order.id)} style={styles.actionFill}>
+                  <Text style={styles.actionFillText}>{t('reorder', lang)}</Text>
+                </Pressable>
+              </View>
+            </Card>
           ))}
         </View>
       )}
@@ -148,24 +166,38 @@ export function OrderScreen({ navigation, route }: NativeStackScreenProps<RootSt
         </View>
       }>
       <TopBar title={`#${order.number}`} onBack={() => navigation.goBack()} right={<View />} />
-      <H1>{t('confirmed', lang)}</H1>
-      <Pill text={labelStatus(order.status, lang)} tone="dark" />
-      <Muted>{order.slotLabel} · {order.serviceDate}</Muted>
-      <Muted>{order.paymentMethod} · {order.paymentState}</Muted>
+      <Notice icon="📋" title={t('confirmed', lang)} body={labelStatus(order.status, lang)} />
+      <View style={styles.row}>
+        <Text style={styles.no}>#{order.number}</Text>
+        <Muted>{order.serviceDate}</Muted>
+      </View>
+      <Card>
+        <Text style={styles.name}>{order.mode === 'COLLECTION' ? t('collection', lang) : t('delivery', lang)}</Text>
+        <Text style={styles.price}>{order.slotLabel}</Text>
+        <Muted>{order.paymentMethod} · {order.paymentState}</Muted>
+      </Card>
+      {order.address ? <Muted>{[order.address.line1, order.address.area, order.address.city].filter(Boolean).join(', ')}</Muted> : null}
+      <Text style={styles.section}>{t('summary', lang)}</Text>
       {order.lines.map(line => (
-        <Card key={line.productId}>
-          <View style={styles.row}>
-            {line.imageUrl ? <Image source={{ uri: line.imageUrl }} style={styles.thumb} /> : <View style={styles.thumb} />}
-            <View style={{ flex: 1 }}>
-              <Text style={styles.name}>{line.productName}</Text>
-              <Muted>{kgLabel(line.orderedGrams)} · {line.batchCode}</Muted>
-              {line.note ? <Muted>{line.note}</Muted> : null}
-            </View>
-            <Text style={styles.price}>{formatTaka(line.lineTotalPoisha)}</Text>
+        <Card key={line.productId} style={styles.lineCard}>
+          {line.imageUrl ? <Image source={{ uri: line.imageUrl }} style={styles.thumb} /> : <View style={styles.thumb} />}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.name}>{line.productName}</Text>
+            <Muted>{kgLabel(line.orderedGrams)} · {line.batchCode}</Muted>
+            {line.note ? <Muted>{line.note}</Muted> : null}
           </View>
+          <Text style={styles.price}>{formatTaka(line.lineTotalPoisha)}</Text>
         </Card>
       ))}
       <View style={styles.row}>
+        <Muted>{t('subtotal', lang)}</Muted>
+        <Text>{formatTaka(order.subtotalPoisha)}</Text>
+      </View>
+      <View style={styles.row}>
+        <Muted>{order.mode === 'COLLECTION' ? t('collectionFee', lang) : t('fee', lang)}</Muted>
+        <Text>{formatTaka(order.feePoisha)}</Text>
+      </View>
+      <View style={styles.totalBand}>
         <Text style={styles.name}>{t('total', lang)}</Text>
         <Text style={styles.price}>{formatTaka(order.totalPoisha)}</Text>
       </View>
@@ -184,19 +216,27 @@ export function TrackScreen({ navigation, route }: NativeStackScreenProps<RootSt
   }, [route.params.id]);
   return (
     <Screen>
-      <TopBar title={t('track', lang)} onBack={() => navigation.goBack()} right={<View />} />
-      <H1>#{order?.number || ''}</H1>
-      <Muted>{order ? labelStatus(order.status, lang) : ''}</Muted>
-      {(order?.events || []).map((event, index) => (
-        <View key={`${event.status}-${index}`} style={styles.event}>
-          <View style={styles.dot} />
-          <View style={{ flex: 1 }}>
-            <Text style={styles.name}>{labelStatus(event.status, lang)}</Text>
-            {event.note ? <Muted>{event.note}</Muted> : null}
-            <Muted>{new Date(event.createdAt).toLocaleString()}</Muted>
+      <TopBar
+        title={t('track', lang)}
+        onBack={() => navigation.goBack()}
+        right={<Pressable onPress={() => order && navigation.navigate('Help', { orderId: order.id })}><Text style={styles.link}>{t('help', lang)}</Text></Pressable>}
+      />
+      {order ? <Notice icon="🚚" title={labelStatus(order.status, lang)} body={`${order.serviceDate} · ${order.slotLabel}`} /> : null}
+      <Card>
+        {(order?.events || []).map((event, index, list) => (
+          <View key={`${event.status}-${index}`} style={styles.event}>
+            <View style={styles.rail}>
+              <View style={[styles.dot, index === list.length - 1 && styles.dotOn]} />
+              {index < list.length - 1 ? <View style={styles.railLine} /> : null}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.name}>{labelStatus(event.status, lang)}</Text>
+              {event.note ? <Muted>{event.note}</Muted> : null}
+              <Muted>{new Date(event.createdAt).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}</Muted>
+            </View>
           </View>
-        </View>
-      ))}
+        ))}
+      </Card>
       {order?.driver ? (
         <Card>
           <Text style={styles.name}>{order.driver.name || (lang === 'bn' ? 'চালক' : 'Driver')}</Text>
@@ -231,17 +271,31 @@ export function PickupScreen({ navigation, route }: NativeStackScreenProps<RootS
   return (
     <Screen>
       <TopBar title={t('collectionPass', lang)} onBack={() => navigation.goBack()} right={<View />} />
-      <H1>{t('showCode', lang)}</H1>
+      {order ? <Notice icon="🏪" title={labelStatus(order.status, lang)} body={order.branch?.name} /> : null}
       {order?.collectionCode ? (
         <Card style={{ alignItems: 'center' }}>
           <QRCode value={value} size={180} backgroundColor={colors.white} color={colors.dark} />
-          <Text style={styles.code}>{order.collectionCode}</Text>
-          <Muted>#{order.number}</Muted>
-          <Muted>{order.branch?.name} · {order.slotLabel}</Muted>
+          <Muted>{t('collectionPass', lang)}</Muted>
+          <View style={styles.codeBand}>
+            <Text style={styles.code}>{order.collectionCode}</Text>
+          </View>
+          <Notice icon="ℹ️" title={t('showCode', lang)} />
+          <Muted>#{order.number} · {order.slotLabel}</Muted>
+          {order.branch ? <Muted>{order.branch.addressLine}</Muted> : null}
         </Card>
       ) : (
         <Muted>{lang === 'bn' ? 'এই অর্ডারে সংগ্রহ কোড নেই' : 'This order has no collection code'}</Muted>
       )}
+      {order?.branch ? (
+        <View style={styles.actions}>
+          <Pressable onPress={() => Linking.openURL(`https://maps.apple.com/?q=${order.branch?.lat},${order.branch?.lng}`)} style={[styles.actionFill, { flex: 1 }]}>
+            <Text style={styles.actionFillText}>{lang === 'bn' ? 'দিকনির্দেশ' : 'Get directions'}</Text>
+          </Pressable>
+          <Pressable onPress={() => Linking.openURL(`tel:${order.branch?.phone}`)} style={[styles.actionOutline, { flex: 1 }]}>
+            <Text style={styles.actionOutlineText}>{t('contact', lang)}</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </Screen>
   );
 }
@@ -271,23 +325,39 @@ export function ReceiptScreen({ navigation, route }: NativeStackScreenProps<Root
   return (
     <Screen footer={<Button label={t('refund', lang)} outline onPress={refund} loading={busy} disabled={!order || order.status === 'CANCELLED'} />}>
       <TopBar title={t('receipt', lang)} onBack={() => navigation.goBack()} right={<View />} />
-      <H1>#{order?.number || ''}</H1>
-      <Muted>{t('amountPaid', lang)} {formatTaka(order?.totalPoisha)}</Muted>
+      <View style={styles.row}>
+        <Text style={styles.no}>#{order?.number || ''}</Text>
+        {order ? <Pill text={labelStatus(order.status, lang)} tone={order.status === 'DELIVERED' || order.status === 'COLLECTED' ? 'green' : 'peach'} /> : null}
+      </View>
       <Muted>{order?.paymentMethod} · {order?.paymentState}</Muted>
       {(order?.lines || []).map(line => (
-        <View key={line.productId} style={styles.row}>
-          <Text style={{ flex: 1 }}>{line.productName} · {kgLabel(line.orderedGrams)}</Text>
-          <Text>{formatTaka(line.lineTotalPoisha)}</Text>
-        </View>
+        <Card key={line.productId} style={styles.lineCard}>
+          {line.imageUrl ? <Image source={{ uri: line.imageUrl }} style={styles.thumb} /> : <View style={styles.thumb} />}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.name}>{line.productName}</Text>
+            <Muted>{kgLabel(line.orderedGrams)}</Muted>
+          </View>
+          <Text style={styles.name}>{formatTaka(line.lineTotalPoisha)}</Text>
+        </Card>
       ))}
       <View style={styles.row}>
         <Text>{t('fee', lang)}</Text>
         <Text>{formatTaka(order?.feePoisha)}</Text>
       </View>
-      <View style={styles.row}>
-        <Text style={styles.name}>{t('total', lang)}</Text>
+      <View style={styles.totalBand}>
+        <Text style={styles.name}>{t('amountPaid', lang)}</Text>
         <Text style={styles.price}>{formatTaka(order?.totalPoisha)}</Text>
       </View>
+      {order ? (
+        <Button
+          label={t('shareReceipt', lang)}
+          outline
+          onPress={() => {
+            const lines = order.lines.map(line => `${line.productName} ${kgLabel(line.orderedGrams)} ${formatTaka(line.lineTotalPoisha)}`).join('\n');
+            Share.share({ message: `MANSO #${order.number}\n${lines}\n${t('total', lang)} ${formatTaka(order.totalPoisha)}` }).catch(() => undefined);
+          }}
+        />
+      ) : null}
       {(order?.payments || []).map(payment => (
         <Card key={payment.id}>
           <Text style={styles.name}>{payment.method} · {payment.state}</Text>
@@ -296,10 +366,7 @@ export function ReceiptScreen({ navigation, route }: NativeStackScreenProps<Root
         </Card>
       ))}
       {(order?.refunds || []).map(refundItem => (
-        <Card key={refundItem.id} style={{ backgroundColor: colors.peach }}>
-          <Text style={styles.name}>{refundItem.status}</Text>
-          <Muted>{formatTaka(refundItem.amountPoisha)} · {refundItem.reason}</Muted>
-        </Card>
+        <Notice key={refundItem.id} icon="↩" title={`${formatTaka(refundItem.amountPoisha)} · ${refundItem.status}`} body={refundItem.reason} />
       ))}
     </Screen>
   );
@@ -316,8 +383,21 @@ const styles = StyleSheet.create({
   price: { color: colors.orange, fontWeight: '800' },
   link: { color: colors.orange, fontWeight: '700' },
   name: { fontWeight: '700', color: colors.dark },
-  thumb: { width: 56, height: 56, borderRadius: 10, backgroundColor: colors.peach },
-  event: { flexDirection: 'row', gap: 12, marginVertical: 8 },
-  dot: { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.orange, marginTop: 4 },
-  code: { ...serif, fontSize: 40, letterSpacing: 6, color: colors.dark, marginTop: 12 },
+  thumb: { width: 52, height: 52, borderRadius: 10, backgroundColor: colors.peach },
+  line: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
+  lineCard: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  actions: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  actionOutline: { flex: 1, minHeight: 44, borderRadius: 12, borderWidth: 1.5, borderColor: colors.orange, alignItems: 'center', justifyContent: 'center' },
+  actionOutlineText: { color: colors.orange, fontWeight: '800' },
+  actionFill: { flex: 1, minHeight: 44, borderRadius: 12, backgroundColor: colors.orange, alignItems: 'center', justifyContent: 'center' },
+  actionFillText: { color: colors.white, fontWeight: '800' },
+  section: { ...serif, fontSize: 22, color: colors.dark, marginTop: 8 },
+  totalBand: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: colors.peach, borderRadius: 14, padding: 12, marginVertical: 8 },
+  event: { flexDirection: 'row', gap: 12 },
+  rail: { width: 16, alignItems: 'center' },
+  railLine: { width: 2, flex: 1, backgroundColor: colors.peach, minHeight: 28 },
+  dot: { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.green, marginTop: 4 },
+  dotOn: { backgroundColor: colors.orange },
+  codeBand: { backgroundColor: colors.peach, borderRadius: 14, paddingHorizontal: 18, paddingVertical: 8, marginTop: 12 },
+  code: { ...serif, fontSize: 36, letterSpacing: 6, color: colors.orange },
 });

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { api, ApiError } from '../api';
 import { t } from '../i18n';
@@ -7,7 +7,7 @@ import { RootStackParamList } from '../nav';
 import { useStore } from '../store';
 import { colors, formatTaka, kgLabel, serif } from '../theme';
 import { Address, Order, Quote, SlotOffer } from '../types';
-import { Button, Card, Field, H1, Muted, Pill, Qty, Screen, TopBar, tx } from '../ui';
+import { Button, Card, Field, H1, Muted, Notice, Qty, Radio, Screen, TopBar, tx } from '../ui';
 
 function moneyError(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.message : fallback;
@@ -19,7 +19,9 @@ function place(address?: Record<string, string | null> | null) {
 }
 
 export function BasketScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Basket'>) {
-  const { lang, user, basket, refreshBasket, changeCut, notify, branch } = useStore();
+  const { lang, user, basket, refreshBasket, changeCut, addCut, notify, branch } = useStore();
+  const [noteFor, setNoteFor] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
   useEffect(() => {
     refreshBasket().catch(error => notify(moneyError(error, t('offline', lang))));
   }, [user?.id]);
@@ -45,38 +47,78 @@ export function BasketScreen({ navigation }: NativeStackScreenProps<RootStackPar
           <Button label={`${t('continue', lang)} →`} onPress={go} disabled={!basket.items.length} />
         </View>
       }>
-      <TopBar title={t('basket', lang)} onBack={() => navigation.goBack()} right={<View />} />
-      <H1>{t('basket', lang)}</H1>
+      <TopBar title={`${t('basket', lang)} (${basket.items.length})`} onBack={() => navigation.goBack()} right={<View />} />
       {!basket.items.length ? <Muted>{t('emptyBasket', lang)}</Muted> : null}
       {basket.items.map(item => (
         <Card key={item.productId}>
           <View style={styles.line}>
             {item.product?.imageUrl ? <Image source={{ uri: item.product.imageUrl }} style={styles.thumb} /> : <View style={styles.thumb} />}
-            <View style={{ flex: 1, gap: 4 }}>
+            <View style={{ flex: 1, gap: 2 }}>
               <Text style={styles.name}>{item.product ? tx(item.product.name, lang) : item.productId}</Text>
-              {item.optionName ? <Muted>{tx(item.optionName, lang)}</Muted> : null}
-              <Text style={styles.price}>{formatTaka(item.lineTotalPoisha)}</Text>
+              <Text style={styles.price}>
+                {formatTaka(item.product?.pricePerKgPoisha)}
+                {t('perKg', lang)}
+              </Text>
+              <Muted>{kgLabel(item.grams)}{item.optionName ? ` · ${tx(item.optionName, lang)}` : ''}</Muted>
               {!item.available ? <Text style={styles.warn}>{t('soldOut', lang)}</Text> : null}
             </View>
-          </View>
-          <View style={styles.lineActions}>
-            <Qty
-              value={item.grams}
-              step={item.product?.incrementGrams || 500}
-              onChange={grams => {
-                const step = item.product?.incrementGrams || 500;
-                const min = item.product?.minGrams || step;
-                const max = item.product?.maxGrams || grams;
-                const next = grams === 0 ? 0 : Math.min(max, Math.max(min, grams));
-                changeCut(item.productId, next).catch(error => notify(moneyError(error, t('offline', lang))));
-              }}
-            />
-            <Pressable onPress={() => changeCut(item.productId, 0).catch(error => notify(error.message))}>
-              <Text style={styles.link}>{lang === 'bn' ? 'বাদ দিন' : 'Remove'}</Text>
+            <Pressable accessibilityLabel="Remove" onPress={() => changeCut(item.productId, 0).catch(error => notify(error.message))} style={styles.trash}>
+              <Text>🗑</Text>
             </Pressable>
           </View>
+          <Qty
+            wide
+            value={item.grams}
+            step={item.product?.incrementGrams || 500}
+            min={item.product?.minGrams || item.product?.incrementGrams || 500}
+            onChange={grams => {
+              const step = item.product?.incrementGrams || 500;
+              const min = item.product?.minGrams || step;
+              const max = item.product?.maxGrams || grams;
+              const next = grams === 0 ? 0 : Math.min(max, Math.max(min, grams));
+              changeCut(item.productId, next).catch(error => notify(moneyError(error, t('offline', lang))));
+            }}
+          />
+          <Pressable
+            onPress={() => {
+              setNoteFor(item.productId);
+              setDraft(item.note || '');
+            }}
+            style={styles.noteRow}>
+            <Text style={styles.noteIcon}>✎</Text>
+            <Text style={styles.noteText} numberOfLines={1}>{item.note || t('notesPh', lang)}</Text>
+            <Text style={styles.chev}>›</Text>
+          </Pressable>
+          {noteFor === item.productId ? (
+            <View>
+              <Field value={draft} onChangeText={setDraft} placeholder={t('notesPh', lang)} />
+              <Button
+                label={t('saved', lang)}
+                outline
+                onPress={() => {
+                  if (!item.product) return;
+                  addCut(item.product, item.grams, item.optionId || undefined, draft).then(() => setNoteFor(null)).catch(error => notify(moneyError(error, t('offline', lang))));
+                }}
+              />
+            </View>
+          ) : null}
         </Card>
       ))}
+      {basket.items.length ? (
+        <Card>
+          <Text style={styles.section}>{t('summary', lang)}</Text>
+          {basket.items.map(item => (
+            <View key={item.productId} style={styles.totalRow}>
+              <Text style={styles.summaryName}>{item.product ? tx(item.product.name, lang) : item.productId} ({kgLabel(item.grams)})</Text>
+              <Text>{formatTaka(item.lineTotalPoisha)}</Text>
+            </View>
+          ))}
+          <View style={styles.totalRow}>
+            <Text style={styles.totalLabel}>{t('subtotal', lang)}</Text>
+            <Text style={styles.totalValue}>{formatTaka(basket.estimatedSubtotalPoisha)}</Text>
+          </View>
+        </Card>
+      ) : null}
       {!basket.items.length ? (
         <Button label={t('shopCuts', lang)} outline onPress={() => navigation.navigate('Main', { screen: 'Shop' })} />
       ) : null}
@@ -176,18 +218,23 @@ export function FulfilScreen({ navigation }: NativeStackScreenProps<RootStackPar
       <TopBar title={mode === 'DELIVERY' ? t('delivery', lang) : t('collection', lang)} onBack={() => navigation.goBack()} right={<View />} />
       <View style={styles.modeRow}>
         <Pressable onPress={() => setMode('DELIVERY')} style={[styles.mode, mode === 'DELIVERY' && styles.modeOn]}>
+          <Text style={styles.modeIcon}>🚚</Text>
           <Text style={[styles.modeText, mode === 'DELIVERY' && styles.modeTextOn]}>{t('delivery', lang)}</Text>
+          <Text style={[styles.modeHint, mode === 'DELIVERY' && styles.modeTextOn]}>{t('toAddress', lang)}</Text>
         </Pressable>
         <Pressable onPress={() => setMode('COLLECTION')} style={[styles.mode, mode === 'COLLECTION' && styles.modeOn]}>
+          <Text style={styles.modeIcon}>🏪</Text>
           <Text style={[styles.modeText, mode === 'COLLECTION' && styles.modeTextOn]}>{t('collection', lang)}</Text>
+          <Text style={[styles.modeHint, mode === 'COLLECTION' && styles.modeTextOn]}>{t('fromBranch', lang)}</Text>
         </Pressable>
       </View>
       {mode === 'DELIVERY' ? (
         <View>
           <Text style={styles.section}>{t('address', lang)}</Text>
           {addresses.map(item => (
-            <AddressCard key={item.id} address={item} selected={item.id === addressId} onPress={() => setAddressId(item.id)} />
+            <AddressCard key={item.id} address={item} selected={item.id === addressId} onPress={() => setAddressId(item.id)} lang={lang} />
           ))}
+          <Notice icon="🚚" title={t('deliveryFrom', lang)} body={t('freshCut', lang)} />
           <Card>
             <Field label={lang === 'bn' ? 'নাম' : 'Label'} value={label} onChangeText={setLabel} />
             <Field label={lang === 'bn' ? 'রাস্তা' : 'Street'} value={line1} onChangeText={setLine1} placeholder="House 12, Road 4" />
@@ -211,21 +258,23 @@ export function FulfilScreen({ navigation }: NativeStackScreenProps<RootStackPar
       )}
       <Text style={styles.section}>{t('selectTime', lang)}</Text>
       {offer?.movedToNextDay ? (
-        <Card style={{ backgroundColor: colors.peach }}>
-          <Text style={styles.name}>{lang === 'bn' ? 'আজকের সময় শেষ। আগামীকাল।' : 'Today is finished. Showing tomorrow.'}</Text>
-        </Card>
+        <Notice title={lang === 'bn' ? 'আজকের সময় শেষ। আগামীকাল।' : 'Today is finished. Showing tomorrow.'} />
       ) : null}
-      <Muted>
-        {mode === 'DELIVERY'
-          ? `${t('deliveryFrom', lang)} · ${t('fee', lang)} ${formatTaka(fee)}`
-          : `${t('collectionFee', lang)} · ${formatTaka(0)}`}
-      </Muted>
-      {(offer?.slots || []).map(slot => (
-        <Pressable key={`${slot.id}-${slot.serviceDate}`} onPress={() => setSlotId(slot.id)} style={[styles.slot, slotId === slot.id && styles.slotOn]}>
-          <Text style={styles.name}>{slot.label}</Text>
-          <Muted>{slot.remaining} {lang === 'bn' ? 'খালি' : 'left'}</Muted>
-        </Pressable>
-      ))}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.timeRow}>
+        {(offer?.slots || []).map(slot => {
+          const on = slotId === slot.id;
+          return (
+            <Pressable key={`${slot.id}-${slot.serviceDate}`} onPress={() => setSlotId(slot.id)} style={[styles.timeChip, on && styles.timeChipOn]}>
+              <Text style={[styles.timeText, on && styles.timeTextOn]}>{slot.label}</Text>
+              <Text style={[styles.timeLeft, on && styles.timeTextOn]}>{slot.remaining} {lang === 'bn' ? 'খালি' : 'left'}</Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+      <View style={styles.totalRow}>
+        <Text style={styles.name}>{mode === 'DELIVERY' ? t('fee', lang) : t('collectionFee', lang)}</Text>
+        <Text style={styles.name}>{formatTaka(fee)}</Text>
+      </View>
       {!offer?.slots.length ? <Muted>{lang === 'bn' ? 'এই মুহূর্তে কোনো স্লট নেই' : 'No slots are open right now'}</Muted> : null}
     </Screen>
   );
@@ -241,11 +290,16 @@ function zoneFee(
   return zone?.feePoisha ?? fallback;
 }
 
-function AddressCard({ address, selected, onPress }: { address: Address; selected: boolean; onPress: () => void }) {
+function AddressCard({ address, selected, onPress, lang }: { address: Address; selected: boolean; onPress: () => void; lang: 'en' | 'bn' }) {
   return (
-    <Pressable onPress={onPress} style={[styles.slot, selected && styles.slotOn]}>
-      <Text style={styles.name}>{address.label}</Text>
-      <Muted>{address.line1}, {address.area}</Muted>
+    <Pressable onPress={onPress} style={[styles.address, selected && styles.slotOn]}>
+      <Text style={styles.pin}>📍</Text>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.name}>{address.area}</Text>
+        <Muted>{address.line1}{address.line2 ? `, ${address.line2}` : ''}</Muted>
+        <Muted>{address.city}</Muted>
+      </View>
+      {selected ? <Text style={styles.link}>{t('change', lang)}</Text> : <Radio on={false} />}
     </Pressable>
   );
 }
@@ -316,39 +370,54 @@ export function PaymentScreen({ navigation, route }: NativeStackScreenProps<Root
         )
       }>
       <TopBar title={t('payment', lang)} onBack={() => navigation.goBack()} right={<View />} />
-      {quote ? (
-        <Card style={{ backgroundColor: colors.peach }}>
-          <Text style={styles.name}>{t('hold', lang)} {mins}:{String(secs).padStart(2, '0')}</Text>
-          <Muted>{quote.slotLabel} · {quote.serviceDate}</Muted>
-          <Muted>{place(quote.address)}</Muted>
-        </Card>
-      ) : null}
-      <Text style={styles.section}>{t('summary', lang)}</Text>
-      {(quote?.lines || []).map(line => (
-        <View key={line.productId} style={styles.summaryLine}>
-          <Text style={styles.name}>{line.productName}</Text>
-          <Text>{kgLabel(line.grams)} · {formatTaka(line.lineTotalPoisha)}</Text>
+      {quote ? <Notice icon="⏱" title={`${t('hold', lang)} ${mins}:${String(secs).padStart(2, '0')}`} body={`${quote.slotLabel} · ${quote.serviceDate}`} /> : null}
+      <Card>
+        <Text style={styles.section}>{t('summary', lang)}</Text>
+        {(quote?.lines || []).map(line => (
+          <View key={line.productId} style={styles.payLine}>
+            {line.imageUrl ? <Image source={{ uri: line.imageUrl }} style={styles.mini} /> : <View style={styles.mini} />}
+            <View style={{ flex: 1 }}>
+              <Text style={styles.name}>{line.productName}</Text>
+              <Muted>{kgLabel(line.grams)}</Muted>
+            </View>
+            <Text style={styles.name}>{formatTaka(line.lineTotalPoisha)}</Text>
+          </View>
+        ))}
+        <View style={styles.totalRow}>
+          <Text>{t('subtotal', lang)}</Text>
+          <Text>{formatTaka(quote?.subtotalPoisha)}</Text>
         </View>
-      ))}
-      <View style={styles.totalRow}>
-        <Text>{t('subtotal', lang)}</Text>
-        <Text>{formatTaka(quote?.subtotalPoisha)}</Text>
-      </View>
-      <View style={styles.totalRow}>
-        <Text>{quote?.mode === 'COLLECTION' ? t('collectionFee', lang) : t('fee', lang)}</Text>
-        <Text>{formatTaka(quote?.feePoisha)}</Text>
-      </View>
-      <View style={styles.totalRow}>
-        <Text style={styles.totalLabel}>{t('total', lang)}</Text>
-        <Text style={styles.totalValue}>{formatTaka(quote?.totalPoisha)}</Text>
-      </View>
+        <View style={styles.totalRow}>
+          <Text>{quote?.mode === 'COLLECTION' ? t('collectionFee', lang) : t('fee', lang)}</Text>
+          <Text>{formatTaka(quote?.feePoisha)}</Text>
+        </View>
+        <View style={[styles.totalRow, styles.totalRule]}>
+          <Text style={styles.totalLabel}>{t('total', lang)}</Text>
+          <Text style={styles.payTotal}>{formatTaka(quote?.totalPoisha)}</Text>
+        </View>
+      </Card>
       <Text style={styles.section}>{t('method', lang)}</Text>
-      {(['BKASH', 'CARD', 'CASH'] as const).map(item => (
-        <Pressable key={item} onPress={() => setMethod(item)} style={[styles.slot, method === item && styles.slotOn]}>
-          <Text style={styles.name}>{item === 'BKASH' ? t('bkash', lang) : item === 'CARD' ? t('card', lang) : t('cash', lang)}</Text>
-          {method === item ? <Pill text="✓" /> : null}
+      {([
+        { id: 'BKASH' as const, title: t('bkash', lang), hint: lang === 'bn' ? 'বিকাশে নিরাপদ পেমেন্ট' : 'Pay securely with bKash', icon: '💗' },
+        { id: 'CARD' as const, title: t('card', lang), hint: 'Visa, Mastercard', icon: '💳' },
+        { id: 'CASH' as const, title: t('cash', lang), hint: lang === 'bn' ? 'পৌঁছালে পরিশোধ' : 'Pay when you receive your order', icon: '💵' },
+      ]).map(item => (
+        <Pressable key={item.id} onPress={() => setMethod(item.id)} style={[styles.method, method === item.id && styles.slotOn]}>
+          <Text style={styles.methodIcon}>{item.icon}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.name}>{item.title}</Text>
+            <Muted>{item.hint}</Muted>
+          </View>
+          <Radio on={method === item.id} />
         </Pressable>
       ))}
+      {quote ? (
+        <Notice
+          icon={quote.mode === 'COLLECTION' ? '🏪' : '🚚'}
+          title={quote.mode === 'COLLECTION' ? t('collection', lang) : t('delivery', lang)}
+          body={`${quote.serviceDate} · ${quote.slotLabel}${place(quote.address) ? `\n${place(quote.address)}` : ''}`}
+        />
+      ) : null}
       <Pressable onPress={() => setAgreed(value => !value)} style={styles.agree}>
         <View style={[styles.box, agreed && styles.boxOn]}>{agreed ? <Text style={{ color: colors.white }}>✓</Text> : null}</View>
         <Text style={{ flex: 1 }}>{t('agree', lang)}</Text>
@@ -393,10 +462,18 @@ export function ResultScreen({ navigation, route }: NativeStackScreenProps<RootS
         </View>
       }>
       <View style={{ alignItems: 'center', paddingTop: 28 }}>
-        <Text style={styles.mark}>{order?.paymentState === 'FAILED' ? '!' : '✓'}</Text>
+        <View style={[styles.markCircle, order?.paymentState === 'FAILED' && { backgroundColor: colors.danger }]}>
+          <Text style={styles.mark}>{order?.paymentState === 'FAILED' ? '!' : '✓'}</Text>
+        </View>
         <H1>{title}</H1>
-        {order ? <Text style={styles.orderNo}>#{order.number}</Text> : null}
-        <Muted>{order ? `${order.slotLabel} · ${formatTaka(order.totalPoisha)}` : ''}</Muted>
+        {order ? <Muted>{lang === 'bn' ? 'পরিশোধ' : 'Your payment of'}</Muted> : null}
+        {order ? <Text style={styles.payTotal}>{formatTaka(order.totalPoisha)}</Text> : null}
+        {order ? <Muted>#{order.number} · {order.paymentMethod} · {order.slotLabel}</Muted> : null}
+        {order && order.paymentState !== 'FAILED' ? (
+          <View style={{ alignSelf: 'stretch' }}>
+            <Notice icon="ℹ️" title={lang === 'bn' ? 'অর্ডার নিশ্চিত হয়েছে' : 'Your order has been confirmed'} body={lang === 'bn' ? 'প্রস্তুত করা হচ্ছে।' : 'It is being prepared.'} />
+          </View>
+        ) : null}
       </View>
     </Screen>
   );
@@ -408,16 +485,31 @@ const styles = StyleSheet.create({
   name: { fontWeight: '700', color: colors.dark },
   price: { color: colors.orange, fontWeight: '800' },
   warn: { color: colors.danger, fontWeight: '700' },
-  lineActions: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 },
+  trash: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.peach, alignItems: 'center', justifyContent: 'center' },
+  noteRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10, backgroundColor: colors.paper, borderRadius: 12, paddingHorizontal: 10, minHeight: 40 },
+  noteIcon: { color: colors.muted },
+  noteText: { flex: 1, color: colors.muted },
+  chev: { fontSize: 22, color: colors.muted },
   link: { color: colors.orange, fontWeight: '700' },
-  totalRow: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: 4 },
+  summaryName: { flex: 1, color: colors.dark, marginRight: 8 },
+  totalRow: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: 4, gap: 8 },
   totalLabel: { fontWeight: '800', color: colors.dark },
   totalValue: { ...serif, fontSize: 22, color: colors.dark },
   modeRow: { flexDirection: 'row', gap: 8, marginVertical: 8 },
-  mode: { flex: 1, minHeight: 44, borderRadius: 12, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white },
-  modeOn: { backgroundColor: colors.dark, borderColor: colors.dark },
-  modeText: { fontWeight: '700', color: colors.dark },
+  mode: { flex: 1, minHeight: 72, borderRadius: 16, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.white, padding: 8 },
+  modeOn: { backgroundColor: colors.orange, borderColor: colors.orange },
+  modeIcon: { fontSize: 16 },
+  modeText: { fontWeight: '800', color: colors.dark },
+  modeHint: { color: colors.muted, fontSize: 11 },
   modeTextOn: { color: colors.white },
+  address: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 12, marginVertical: 6, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  pin: { fontSize: 18 },
+  timeRow: { gap: 8, paddingVertical: 8 },
+  timeChip: { minWidth: 108, borderRadius: 14, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.white, paddingHorizontal: 14, paddingVertical: 12, alignItems: 'center' },
+  timeChipOn: { backgroundColor: colors.orange, borderColor: colors.orange },
+  timeText: { fontWeight: '800', color: colors.dark },
+  timeLeft: { color: colors.muted, fontSize: 11, marginTop: 2 },
+  timeTextOn: { color: colors.white },
   section: { ...serif, fontSize: 22, color: colors.dark, marginTop: 12 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 8 },
   chip: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: colors.white },
@@ -426,10 +518,15 @@ const styles = StyleSheet.create({
   chipTextOn: { color: colors.orange, fontWeight: '700' },
   slot: { borderWidth: 1, borderColor: colors.line, borderRadius: 14, padding: 12, marginVertical: 6, backgroundColor: colors.white, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   slotOn: { borderColor: colors.orange, backgroundColor: colors.peach },
-  summaryLine: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: 6 },
+  payLine: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 6 },
+  mini: { width: 48, height: 48, borderRadius: 10, backgroundColor: colors.peach },
+  payTotal: { ...serif, fontSize: 28, color: colors.orange },
+  totalRule: { borderTopWidth: 1, borderTopColor: colors.line, paddingTop: 8, marginTop: 6 },
+  method: { borderWidth: 1, borderColor: colors.line, borderRadius: 16, padding: 12, marginVertical: 6, backgroundColor: colors.white, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  methodIcon: { fontSize: 20, width: 28, textAlign: 'center' },
   agree: { flexDirection: 'row', gap: 10, alignItems: 'center', marginVertical: 12 },
   box: { width: 24, height: 24, borderRadius: 6, borderWidth: 1, borderColor: colors.line, alignItems: 'center', justifyContent: 'center' },
   boxOn: { backgroundColor: colors.orange, borderColor: colors.orange },
-  mark: { fontSize: 48, color: colors.orange, fontWeight: '800' },
-  orderNo: { ...serif, fontSize: 28, color: colors.dark },
+  markCircle: { width: 84, height: 84, borderRadius: 42, backgroundColor: colors.orange, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  mark: { fontSize: 40, color: colors.white, fontWeight: '800' },
 });

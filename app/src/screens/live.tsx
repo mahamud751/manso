@@ -9,7 +9,7 @@ import { RootStackParamList, TabParamList } from '../nav';
 import { useStore } from '../store';
 import { colors, formatTaka, serif } from '../theme';
 import { LiveSession, Replay } from '../types';
-import { Button, Card, Field, Muted, Pill, Qty, Screen, TopBar, tx } from '../ui';
+import { Button, Card, Field, Muted, Notice, Pill, Qty, Screen, TopBar, tx } from '../ui';
 
 type Nav = CompositeNavigationProp<BottomTabNavigationProp<TabParamList>, NativeStackNavigationProp<RootStackParamList>>;
 
@@ -39,37 +39,53 @@ export function LiveHubScreen() {
         <Text style={styles.bannerTitle}>{t('watchOrder', lang)}</Text>
       </View>
       {current ? (
-        <Card>
-          {current.posterUrl ? <Image source={{ uri: current.posterUrl }} style={styles.thumb} /> : null}
-          <View style={styles.row}>
-            <Pill text={current.status} tone={current.status === 'LIVE' ? 'dark' : 'peach'} />
-            <Muted>{current.viewerCount} {lang === 'bn' ? 'দেখছেন' : 'watching'}</Muted>
+        <Card style={{ padding: 10 }}>
+          <View style={styles.poster}>
+            {current.posterUrl ? <Image source={{ uri: current.posterUrl }} style={StyleSheet.absoluteFill} /> : null}
+            <Pill text={current.status === 'LIVE' ? 'LIVE' : current.status} tone="dark" />
           </View>
-          <Text style={styles.title}>{tx(current.title, lang)}</Text>
-          <Muted>{tx(current.summary, lang)}</Muted>
-          <Button label={`${t('watchOrder', lang)} →`} onPress={() => navigation.navigate('LiveWatch', { id: current.id })} />
+          <View style={{ padding: 6 }}>
+            <Text style={styles.title}>{tx(current.title, lang)}</Text>
+            <Muted>{tx(current.summary, lang)}</Muted>
+            <Muted>{current.viewerCount} {t('watching', lang)}</Muted>
+            <Button label={`${t('watchOrder', lang)} →`} onPress={() => navigation.navigate('LiveWatch', { id: current.id })} />
+          </View>
         </Card>
       ) : <Muted>{lang === 'bn' ? 'এখন কোনো সেশন নেই।' : 'No session scheduled.'}</Muted>}
       <Text style={styles.section}>{t('upcoming', lang)}</Text>
       {sessions.filter(session => session.status === 'SCHEDULED').map(session => (
-        <Card key={session.id}>
-          <Text style={{ fontWeight: '700' }}>{tx(session.title, lang)}</Text>
-          <Muted>{new Date(session.scheduledStart).toLocaleString('en-GB', { timeZone: 'Asia/Dhaka' })}</Muted>
-        </Card>
+        <Pressable key={session.id} onPress={() => navigation.navigate('LiveWatch', { id: session.id })}>
+          <Card style={styles.schedule}>
+            <Text style={styles.cal}>📅</Text>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.strong}>{new Date(session.scheduledStart).toLocaleDateString('en-GB', { timeZone: 'Asia/Dhaka', day: 'numeric', month: 'short' })}</Text>
+              <Muted>{tx(session.title, lang)}</Muted>
+            </View>
+            <Text style={styles.chev}>›</Text>
+          </Card>
+        </Pressable>
       ))}
       <Text style={styles.section}>{t('replays', lang)}</Text>
       {replays.map(replay => (
         <Pressable key={replay.id} onPress={() => navigation.navigate('Replay', { id: replay.id })}>
-          <Card>
-            <View style={styles.row}><Pill text="REPLAY" /><Muted>{replay.viewCount} {lang === 'bn' ? 'বার' : 'views'}</Muted></View>
-            <Text style={{ fontWeight: '700' }}>{tx(replay.title, lang)}</Text>
-            <Muted>{replay.batch.code} · {replay.serviceDate}</Muted>
+          <Card style={styles.schedule}>
+            <View style={styles.replayThumb}>
+              {replay.posterUrl ? <Image source={{ uri: replay.posterUrl }} style={StyleSheet.absoluteFill} /> : null}
+              <View style={styles.replayBadge}><Text style={styles.replayBadgeText}>REPLAY</Text></View>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.strong}>{replay.serviceDate}</Text>
+              <Text style={styles.replayTitle} numberOfLines={1}>{tx(replay.title, lang)}</Text>
+              <Muted>{replay.viewCount} {t('views', lang)}</Muted>
+            </View>
+            <Text style={styles.chev}>›</Text>
           </Card>
         </Pressable>
       ))}
-      <View style={styles.switchRow}>
+      <Card style={styles.switchRow}>
+        <Text style={styles.bell}>🔔</Text>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontWeight: '800' }}>{t('alerts', lang)}</Text>
+          <Text style={styles.strong}>{t('alerts', lang)}</Text>
           <Muted>{t('alertsHint', lang)}</Muted>
         </View>
         <Switch
@@ -84,24 +100,16 @@ export function LiveHubScreen() {
             setConsent({ liveAlerts: value }).catch(error => notify(error.message));
           }}
         />
-      </View>
+      </Card>
     </Screen>
   );
 }
 
 export function LiveWatchScreen({ route, navigation }: NativeStackScreenProps<RootStackParamList, 'LiveWatch'>) {
-  const { lang, viewerKey, addCut, notify, basket, user } = useStore();
+  const { lang, viewerKey, addCut, changeCut, notify, basket, user } = useStore();
   const [session, setSession] = useState<LiveSession | null>(null);
-  const [grams, setGrams] = useState<Record<string, number>>({});
   const [question, setQuestion] = useState('');
-  const load = () => api.session(route.params.id).then(next => {
-    setSession(next);
-    setGrams(current => {
-      const copy = { ...current };
-      for (const pin of next.pins) if (!copy[pin.id]) copy[pin.id] = pin.minGrams;
-      return copy;
-    });
-  });
+  const load = () => api.session(route.params.id).then(setSession);
   useEffect(() => {
     load().catch(error => notify(error instanceof ApiError ? error.message : t('offline', lang)));
     const poll = setInterval(() => {
@@ -122,26 +130,57 @@ export function LiveWatchScreen({ route, navigation }: NativeStackScreenProps<Ro
           {session.batch ? <Pill text={session.batch.code} /> : null}
         </View>
         <View style={styles.playerFoot}>
-          <Text style={{ color: colors.white }}>{session.viewerCount} {lang === 'bn' ? 'দেখছেন' : 'watching'}</Text>
+          <Text style={{ color: colors.white }}>{session.viewerCount} {t('watching', lang)}</Text>
         </View>
       </View>
-      {!live ? <Card style={{ backgroundColor: colors.peach }}><Text style={{ fontWeight: '800' }}>{session.status === 'OFFLINE' ? 'Offline' : session.status === 'ENDED' ? (lang === 'bn' ? 'সেশন শেষ' : 'This session has ended') : (lang === 'bn' ? 'সকাল ১০টায় শুরু' : 'Starts at 10 am')}</Text></Card> : null}
+      {!live ? <Notice title={session.status === 'OFFLINE' ? 'Offline' : session.status === 'ENDED' ? (lang === 'bn' ? 'সেশন শেষ' : 'This session has ended') : (lang === 'bn' ? 'সকাল ১০টায় শুরু' : 'Starts at 10 am')} /> : null}
       <Text style={styles.section}>{t('orderBatch', lang)}</Text>
-      <Muted>🚚 {t('deliveryFrom', lang)}</Muted>
-      {session.pins.map(product => (
-        <Card key={product.id}>
-          <View style={styles.row}>
-            {product.imageUrl ? <Image source={{ uri: product.imageUrl }} style={styles.mini} /> : <View style={styles.mini} />}
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontWeight: '800' }}>{tx(product.name, lang)}</Text>
-              <Text style={styles.price}>{formatTaka(product.pricePerKgPoisha)}{t('perKg', lang)}</Text>
-              <Muted>{product.inStock ? product.batch?.code : t('soldOut', lang)}</Muted>
+      <Notice icon="🕒" title={t('deliveryFrom', lang)} />
+      {session.pins.map(product => {
+        const grams = basket.items.find(item => item.productId === product.id)?.grams || 0;
+        return (
+          <Card key={product.id}>
+            <View style={styles.row}>
+              {product.imageUrl ? <Image source={{ uri: product.imageUrl }} style={styles.mini} /> : <View style={styles.mini} />}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.strong}>{tx(product.name, lang)}</Text>
+                <Text style={styles.price}>{formatTaka(product.pricePerKgPoisha)}{t('perKg', lang)}</Text>
+                <Muted>{product.inStock ? `${product.batch?.code || ''} · ${product.batch?.preparationDate || ''}` : t('soldOut', lang)}</Muted>
+              </View>
             </View>
-          </View>
-          <Qty value={grams[product.id] || product.minGrams} step={product.incrementGrams} onChange={value => setGrams(current => ({ ...current, [product.id]: value }))} />
-          <Button label={t('add', lang)} disabled={!product.inStock} onPress={() => addCut(product, grams[product.id] || product.minGrams, product.options[0]?.id).then(() => notify(tx(product.name, lang))).catch(error => notify(error.message))} />
-        </Card>
-      ))}
+            <Qty
+              wide
+              value={grams}
+              step={product.incrementGrams}
+              min={product.minGrams}
+              disabled={!product.inStock}
+              onChange={next => {
+                const capped = next === 0 ? 0 : Math.min(product.maxGrams, next);
+                const existing = grams > 0;
+                const run = existing || capped === 0 ? changeCut(product.id, capped) : addCut(product, capped, product.options[0]?.id);
+                run.then(() => { if (!existing && capped > 0) notify(tx(product.name, lang)); }).catch(error => notify(error.message));
+              }}
+            />
+          </Card>
+        );
+      })}
+      <Text style={styles.section}>{lang === 'bn' ? 'যেভাবে চান' : 'Get it your way'}</Text>
+      <View style={styles.wayRow}>
+        <Pressable style={{ flex: 1 }} onPress={() => navigation.navigate('Basket')}>
+          <Card style={styles.way}>
+            <Text style={styles.wayIcon}>🚚</Text>
+            <Text style={styles.strong}>{t('delivery', lang)}</Text>
+            <Muted>{t('toAddress', lang)}</Muted>
+          </Card>
+        </Pressable>
+        <Pressable style={{ flex: 1 }} onPress={() => navigation.navigate('Basket')}>
+          <Card style={styles.way}>
+            <Text style={styles.wayIcon}>🏪</Text>
+            <Text style={styles.strong}>{t('collection', lang)}</Text>
+            <Muted>{t('fromBranch', lang)}</Muted>
+          </Card>
+        </Pressable>
+      </View>
       <Field label={t('ask', lang)} value={question} onChangeText={setQuestion} placeholder={lang === 'bn' ? 'আপনার প্রশ্ন' : 'Your question'} />
       <Button outline label={t('send', lang)} onPress={() => {
         if (!user) {
@@ -172,20 +211,21 @@ export function ReplayScreen({ route, navigation }: NativeStackScreenProps<RootS
         {replay.posterUrl ? <Image source={{ uri: replay.posterUrl }} style={StyleSheet.absoluteFill} /> : null}
         <View style={styles.badges}><Pill text="REPLAY" tone="dark" /><Pill text={t('notLive', lang)} /></View>
       </View>
-      <View style={styles.row}>
-        <Text style={{ fontWeight: '800' }}>{replay.serviceDate}</Text>
-        <Muted>{replay.batch.code}</Muted>
-        <Muted>{minutes} min</Muted>
-        <Muted>{replay.viewCount}</Muted>
-      </View>
-      <Text style={styles.title}>{tx(replay.title, lang)}</Text>
-      <Muted>{tx(replay.summary, lang)}</Muted>
-      {replay.soldOut ? (
-        <Card style={{ backgroundColor: colors.peach }}>
-          <Text style={{ color: colors.orange, fontWeight: '800' }}>{t('batchSold', lang)}</Text>
-          <Muted>{t('batchSoldHint', lang)}</Muted>
-        </Card>
-      ) : null}
+      <Card>
+        <View style={styles.row}>
+          <Pill text="REPLAY" tone="dark" />
+          <Text style={styles.strong}>{replay.serviceDate}</Text>
+          <Muted>{replay.batch.code}</Muted>
+          <Pill text={t('notLive', lang)} />
+        </View>
+        <Text style={styles.title}>{tx(replay.title, lang)}</Text>
+        <Muted>{tx(replay.summary, lang)}</Muted>
+        <View style={styles.row}>
+          <Muted>{replay.viewCount} {t('views', lang)}</Muted>
+          <Muted>{minutes} min</Muted>
+        </View>
+      </Card>
+      {replay.soldOut ? <Notice icon="ℹ️" title={t('batchSold', lang)} body={t('batchSoldHint', lang)} /> : null}
     </Screen>
   );
 }
@@ -194,11 +234,23 @@ const styles = StyleSheet.create({
   banner: { backgroundColor: colors.orange, borderRadius: 18, padding: 16 },
   kicker: { color: '#FFE8D7', fontWeight: '700' },
   bannerTitle: { ...serif, color: colors.white, fontSize: 30 },
-  thumb: { height: 140, borderRadius: 12, width: '100%' },
+  poster: { height: 150, borderRadius: 14, overflow: 'hidden', backgroundColor: colors.dark, padding: 10 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 6, flexWrap: 'wrap' },
-  title: { ...serif, fontSize: 26, color: colors.dark },
+  title: { ...serif, fontSize: 24, color: colors.dark, marginTop: 8 },
   section: { ...serif, fontSize: 22, marginTop: 12, color: colors.dark },
-  switchRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, borderTopWidth: 1, borderTopColor: colors.line, marginTop: 8 },
+  strong: { fontWeight: '800', color: colors.dark },
+  schedule: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  cal: { fontSize: 18 },
+  chev: { fontSize: 26, color: colors.muted },
+  replayThumb: { width: 74, height: 56, borderRadius: 10, overflow: 'hidden', backgroundColor: colors.dark },
+  replayBadge: { position: 'absolute', left: 4, bottom: 4, backgroundColor: colors.orange, borderRadius: 4, paddingHorizontal: 4, paddingVertical: 1 },
+  replayBadgeText: { color: colors.white, fontSize: 8, fontWeight: '800' },
+  replayTitle: { color: colors.muted, fontSize: 13 },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  bell: { fontSize: 18 },
+  wayRow: { flexDirection: 'row', gap: 8 },
+  way: { flex: 1, marginVertical: 0 },
+  wayIcon: { fontSize: 18, marginBottom: 4 },
   player: { height: 230, borderRadius: 16, overflow: 'hidden', backgroundColor: colors.dark, justifyContent: 'space-between' },
   badges: { flexDirection: 'row', gap: 6, padding: 12 },
   playerFoot: { padding: 12, backgroundColor: '#11111188' },

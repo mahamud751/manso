@@ -7,7 +7,7 @@ import { RootStackParamList } from '../nav';
 import { useStore } from '../store';
 import { colors, serif } from '../theme';
 import { Branch } from '../types';
-import { Bull, Button, Card, Field, H1, Muted, Screen } from '../ui';
+import { Bull, Button, Card, Field, H1, Muted, Pill, Screen } from '../ui';
 
 export function WelcomeScreen({ navigation }: NativeStackScreenProps<RootStackParamList, 'Welcome'>) {
   const { lang, setLang, finishOnboarding } = useStore();
@@ -137,17 +137,26 @@ export function BranchScreen({ navigation }: NativeStackScreenProps<RootStackPar
         <Text style={styles.mapPin}>📍 {picked ? `${picked.area}, ${picked.city}` : 'Sylhet'}</Text>
       </Card>
       <Muted>{t('locationNote', lang)}</Muted>
-      {rows.map(branch => (
-        <Pressable key={branch.id} onPress={() => setPicked(branch)}>
-          <Card style={picked?.id === branch.id ? styles.picked : undefined}>
-            {branch.imageUrl ? <Image source={{ uri: branch.imageUrl }} style={styles.shop} /> : null}
-            <Text style={styles.blockTitle}>{branch.name}</Text>
-            <Muted>{branch.addressLine}</Muted>
-            <Muted>{lang === 'bn' ? 'ডেলিভারি ও সংগ্রহ' : 'Delivery and collection'}</Muted>
-            <Text style={styles.hours}>{branch.opensAt}–{branch.closesAt}</Text>
-          </Card>
-        </Pressable>
-      ))}
+      <Text style={styles.nearby}>{lang === 'bn' ? 'কাছের শাখা' : 'Nearby branch'}</Text>
+      {rows.map(branch => {
+        const on = picked?.id === branch.id;
+        return (
+          <Pressable key={branch.id} onPress={() => setPicked(branch)}>
+            <Card style={[styles.branch, on && styles.picked]}>
+              {branch.imageUrl ? <Image source={{ uri: branch.imageUrl }} style={styles.shop} /> : <View style={styles.shop} />}
+              <View style={{ flex: 1, gap: 2 }}>
+                <View style={styles.branchTop}>
+                  <Text style={styles.branchName}>{branch.name}</Text>
+                  {on ? <Pill text={t('selected', lang)} /> : null}
+                </View>
+                <Muted>📍 {branch.addressLine}</Muted>
+                <Muted>🚚 {t('deliveryAvailable', lang)}</Muted>
+                <Muted>🛍 {t('collectionAvailable', lang)}</Muted>
+              </View>
+            </Card>
+          </Pressable>
+        );
+      })}
     </Screen>
   );
 }
@@ -167,7 +176,10 @@ const styles = StyleSheet.create({
   debug: { color: colors.orange, fontWeight: '800', marginTop: 8 },
   map: { height: 150, alignItems: 'center', justifyContent: 'center', backgroundColor: '#E7EFE0' },
   mapPin: { backgroundColor: colors.white, color: colors.orange, fontWeight: '800', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, overflow: 'hidden' },
-  shop: { width: '100%', height: 120, borderRadius: 12 },
-  picked: { borderColor: colors.orange, borderWidth: 2 },
-  hours: { marginTop: 6, color: colors.muted },
+  nearby: { ...serif, fontSize: 22, color: colors.dark, marginTop: 8 },
+  branch: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  branchTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  branchName: { fontWeight: '800', fontSize: 16, color: colors.dark, flex: 1 },
+  shop: { width: 84, height: 84, borderRadius: 12, backgroundColor: colors.peach },
+  picked: { borderColor: colors.orange, borderWidth: 1.5 },
 });

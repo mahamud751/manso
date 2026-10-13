@@ -58,7 +58,7 @@ async function main() {
       deliveryStartsAt: '14:00',
       deliveryFeePoisha: 8000,
       minOrderPoisha: 50000,
-      imageUrl: '/media/shop.jpg',
+      imageUrl: '/media/shop-zinda.jpg',
     },
   });
 
@@ -105,7 +105,7 @@ async function main() {
       descriptionEn: 'Fresh beef with bone from today’s released batch. A rich cut for curry.',
       descriptionBn: 'আজকের ছাড় করা ব্যাচের হাড়সহ তাজা গরুর মাংস। কারি রান্নার জন্য।',
       boneContent: 'With bone',
-      imageUrl: '/media/bone.jpg',
+      imageUrl: '/media/with-bone.jpg',
       sort: 1,
       price: 75000,
       otherPrice: 76000,
@@ -163,6 +163,57 @@ async function main() {
       options: [
         ['Medium curry', 'মাঝারি কারি'],
         ['Large pieces', 'বড় টুকরা'],
+      ],
+    },
+    {
+      slug: 'beef-ribs',
+      kind: ProductKind.BEEF,
+      nameEn: 'Beef ribs',
+      nameBn: 'গরুর পাঁজর',
+      descriptionEn: 'Meaty rib sections from today’s batch, for slow curry or a grill.',
+      descriptionBn: 'আজকের ব্যাচের মাংসল পাঁজর। ধীর কারি বা গ্রিলের জন্য।',
+      boneContent: 'Rib bone',
+      imageUrl: '/media/ribs.jpg',
+      sort: 5,
+      price: 82000,
+      otherPrice: 84000,
+      options: [
+        ['Curry cut', 'কারি কাট'],
+        ['Rack pieces', 'র‍্যাক'],
+      ],
+    },
+    {
+      slug: 'beef-shank',
+      kind: ProductKind.BEEF,
+      nameEn: 'Beef shank',
+      nameBn: 'গরুর নালি',
+      descriptionEn: 'Cross-cut shank with marrow. A Sylhet favourite for nihari-style curry.',
+      descriptionBn: 'মজ্জাসহ ক্রস-কাট নালি। নিহারি-ধরনের কারির জন্য।',
+      boneContent: 'Marrow bone',
+      imageUrl: '/media/shank.jpg',
+      sort: 6,
+      price: 70000,
+      otherPrice: 72000,
+      options: [
+        ['Cross cut', 'ক্রস কাট'],
+        ['Curry cut', 'কারি কাট'],
+      ],
+    },
+    {
+      slug: 'beef-liver',
+      kind: ProductKind.BEEF,
+      nameEn: 'Beef liver',
+      nameBn: 'গরুর কলিজা',
+      descriptionEn: 'Fresh liver, sliced at the branch. Cook the same day.',
+      descriptionBn: 'তাজা কলিজা, শাখায় স্লাইস করা। একই দিনে রান্না করুন।',
+      boneContent: 'Offal',
+      imageUrl: '/media/liver.jpg',
+      sort: 7,
+      price: 62000,
+      otherPrice: 64000,
+      options: [
+        ['Sliced', 'স্লাইস'],
+        ['Whole piece', 'আস্ত টুকরা'],
       ],
     },
   ];
@@ -223,8 +274,8 @@ async function main() {
     },
   });
 
-  const todayStock = [18000, 12000, 10000, 15000];
-  const soldToday = [1000, 1000, 0, 0];
+  const todayStock = [18000, 12000, 10000, 15000, 14000, 9000, 8000];
+  const soldToday = [1000, 1000, 0, 0, 500, 0, 0];
   for (let i = 0; i < products.length; i += 1) {
     await prisma.batchCutStock.create({
       data: {
@@ -294,7 +345,7 @@ async function main() {
   const customer = await prisma.user.create({
     data: {
       phone: '+8801712345678',
-      name: 'Customer',
+      name: 'Farhana Chowdhury',
       role: UserRole.CUSTOMER,
       preferredBranchId: uposhahar.id,
       consent: { create: { liveAlerts: true, offers: false, orderUpdates: true, termsAcceptedAt: now } },
